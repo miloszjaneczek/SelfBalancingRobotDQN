@@ -48,7 +48,7 @@ void setup()
     Acc_rawX=Wire.read()<<8|Wire.read(); 
     Acc_rawY=Wire.read()<<8|Wire.read();
     Acc_rawZ=Wire.read()<<8|Wire.read(); 
-    /////////////////////CONVERTING RAW DATA TO ANGLES/////////////////////
+    /////////////////////READING OFFSET ANGLES/////////////////////
     Acceleration_angleb[0] = atan(((Acc_rawY/16384.0))/sqrt(pow(((Acc_rawX/16384.0)),2) + pow(((Acc_rawZ/16384.0)),2)))*rad_to_deg;
     Acceleration_angleb[1] = atan(-1*((Acc_rawX/16384.0))/sqrt(pow(((Acc_rawY/16384.0)),2) + pow(((Acc_rawZ/16384.0)),2)))*rad_to_deg;
 
