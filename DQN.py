@@ -30,6 +30,12 @@ class DQN(tf.keras.Model):
         x = self.dense1(x)
         x = self.dense2(x)
         return self.dense3(x)
+    
+    def save(self, filename):
+        self.save_weights(filename)
+    
+    def load(self, filename):
+        self.load_weights(filename)
 
 '''
 Creation of instances of DQN network - main neural network and target neural network
@@ -38,8 +44,9 @@ target_nn - used as a reference or a fixed target for estimating the target Q-va
 stabilize and improve the training providing more consistent target values.
 '''
 main_nn = DQN()
+#main_nn.load("main_nn") #UNCOMMENT FOR LOADING MODEL FROM FILE
 target_nn = DQN()
-
+#target_nn.load("target_nn") #UNCOMMENT FOR LOADING MODEL FROM FILE
 '''
 Initialization of Adam optimizer with learning rate of 1e-4 and mean square error loss function.
 '''
@@ -91,7 +98,7 @@ def select_epsilon_greedy_action(state, epsilon):
 
 
 @tf.function
-def train_step(states, actions, rewards, next_states, dones):
+def train_step(states, actions, rewards, next_states, dones, discount):
     """Perform a training iteration on a batch of data sampled from the experience
   replay buffer."""
     # Calculate targets.
@@ -113,91 +120,112 @@ def rad(angle):
     """Convert angles from degrees to radians"""
     return angle * math.pi / 180
 
-# connectivity setup
-uart_port = 'COM12'  # in case of UART connectivity
-uart_speed = 115200  # serial port speed
-wifi_local_ip = '192.168.4.1'  # host (this) IP
-wifi_robot_ip = '192.158.4.2'  # remote (robot) IP
-wifi_local_port = '1234'  # host (this) port
-wifi_robot_port = '1235'  # remote (robot) port
-ser = serial.Serial(
-    port='COM12',
-    baudrate=115200,
-    parity=serial.PARITY_NONE,
-    stopbits=serial.STOPBITS_ONE,
-    bytesize=serial.EIGHTBITS,
-    timeout=0.01
-)
 
-# Learning hyperparameters.
-num_episodes = 1000  # Number of episodes for training.
-epsilon = 1.0   # Exploration rate (initial value).
-batch_size = 32  # Batch size for training.
-discount = 0.99  # Discount factor for future rewards.
-buffer = ReplayBuffer(100000)  # Replay buffer to store experiences.
-cur_frame = 0  # Current frame count.
-msg = ''
-last_100_ep_rewards = []  # List to store the rewards of the last 100 episodes.
+def save_model(model, path):
+    """Save the model to a file."""
+    tf.keras.models.save_model(model, path, save_format="tf")
 
-for episode in range(num_episodes + 1):
-    print("NEW EPISODE")
-    # data from robot
-    if episode == 1:
-        msg = ser.readline()  # Read a line from the serial port for the first episode.
-    while msg == b'PID\r\n' or msg == b'' or msg == '':
-        msg = ser.readline()  # Read lines until a non-empty line with "PID" is received.
 
-    msg = msg.split()
-    angle = rad(float(msg[0][2:]))  # Extract angle from the received message and convert it to radians.
-    speed = int(msg[1])  # Extract speed from the received message.
-    gyro = float(msg[2])  # Extract gyro from the received message.
+def load_model(path):
+    """Load the model from a file."""
+    return tf.keras.models.load_model(path)
 
-    state = [speed, angle, gyro]  # Create a state list
 
-    ep_reward, done = 0, False  # Episode reward and done flag
-    while not done:
-        state_in = tf.expand_dims(state, axis=0)  # Expand dimensions of the state for NN.
-        action = select_epsilon_greedy_action(state_in, epsilon)  # Select an action using epsilon-greedy policy.
+def train_model():
+    # connectivity setup
+    uart_port = 'COM12'  # in case of UART connectivity
+    uart_speed = 115200  # serial port speed
+    wifi_local_ip = '192.168.4.1'  # host (this) IP
+    wifi_robot_ip = '192.158.4.2'  # remote (robot) IP
+    wifi_local_port = '1234'  # host (this) port
+    wifi_robot_port = '1235'  # remote (robot) port
+    ser = serial.Serial(
+        port='COM12',
+        baudrate=115200,
+        parity=serial.PARITY_NONE,
+        stopbits=serial.STOPBITS_ONE,
+        bytesize=serial.EIGHTBITS,
+        timeout=0.01
+    )
 
-        # send data to robot
-        ser.write((str(action) + '\n').encode())  # Send action to robot.
-        print("sent: " + str(action))
-        msg = ser.readline()  # Response from robot.
-        print(msg)
-        if msg == b'PID\r\n':
-            done = True  # If the message indicates the end of the episode, set the done flag to True.
-        else:
-            msg = msg.split()
-            angle = rad(float(msg[0][2:]))  # Extract angle from message
-            speed = int(msg[1])  # Extract speed from message
-            gyro = float(msg[2])  # Extract gyro from message
+    # Learning hyperparameters.
+    num_episodes = 1000  # Number of episodes for training.
+    epsilon = 1.0   # Exploration rate (initial value).
+    batch_size = 32  # Batch size for training.
+    discount = 0.99  # Discount factor for future rewards.
+    buffer = ReplayBuffer(100000)  # Replay buffer to store experiences.
+    cur_frame = 0  # Current frame count.
+    msg = ''
+    last_100_ep_rewards = []  # List to store the rewards of the last 100 episodes.
 
-        next_state = [speed, angle, gyro]  # Next state list
-        # time based
-        reward = 1
+    for episode in range(num_episodes + 1):
+        print("NEW EPISODE")
+        # data from robot
+        if episode == 1:
+            msg = ser.readline()  # Read a line from the serial port for the first episode.
+        while msg == b'PID\r\n' or msg == b'' or msg == '':
+            msg = ser.readline()  # Read lines until a non-empty line with "PID" is received.
 
-        ep_reward += reward  # Add the reward for the episode.
-        # Save to experience replay.
-        buffer.add(state, action, reward, next_state, done)  # Add the experience to the replay buffer.
-        state = next_state  # Current state to next state
-        cur_frame += 1
-        # Copy main_nn weights to target_nn.
-        if cur_frame % 2000 == 0:
-            target_nn.set_weights(main_nn.get_weights())   # Update the target neural network weights.
+        msg = msg.split()
+        angle = rad(float(msg[0][2:]))  # Extract angle from the received message and convert it to radians.
+        speed = int(msg[1])  # Extract speed from the received message.
+        gyro = float(msg[2])  # Extract gyro from the received message.
 
-        # Train neural network.
-        if len(buffer) >= batch_size:
-            states, actions, rewards, next_states, dones = buffer.sample(batch_size)  # Sample a batch from the replay buffer.
-            loss = train_step(states, actions, rewards, next_states, dones)  # Training
+        state = [speed, angle, gyro]  # Create a state list
 
-    if episode < 950:
-        epsilon -= 0.001  # Decrease epsilon over time to decrease exploration.
+        ep_reward, done = 0, False  # Episode reward and done flag
+        while not done:
+            state_in = tf.expand_dims(state, axis=0)  # Expand dimensions of the state for NN.
+            action = select_epsilon_greedy_action(state_in, epsilon)  # Select an action using epsilon-greedy policy.
 
-    if len(last_100_ep_rewards) == 100:
-        last_100_ep_rewards = last_100_ep_rewards[1:]  # Remove the oldest episode reward from the list.
-    last_100_ep_rewards.append(ep_reward)  # Add the current episode reward to the list.
+            # send data to robot
+            ser.write((str(action) + '\n').encode())  # Send action to robot.
+            print("sent: " + str(action))
+            msg = ser.readline()  # Response from robot.
+            print(msg)
+            if msg == b'PID\r\n':
+                done = True  # If the message indicates the end of the episode, set the done flag to True.
+            else:
+                msg = msg.split()
+                angle = rad(float(msg[0][2:]))  # Extract angle from message
+                speed = int(msg[1])  # Extract speed from message
+                gyro = float(msg[2])  # Extract gyro from message
 
-    if episode % 50 == 0:
-        print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. '
-              f'Reward in last 100 episodes: {np.mean(last_100_ep_rewards):.3f}')  # Printing information about episode.
+            next_state = [speed, angle, gyro]  # Next state list
+            # time based
+            reward = 1
+
+            ep_reward += reward  # Add the reward for the episode.
+            # Save to experience replay.
+            buffer.add(state, action, reward, next_state, done)  # Add the experience to the replay buffer.
+            state = next_state  # Current state to next state
+            cur_frame += 1
+            # Copy main_nn weights to target_nn.
+            if cur_frame % 2000 == 0:
+                target_nn.set_weights(main_nn.get_weights())   # Update the target neural network weights.
+
+            # Train neural network.
+            if len(buffer) >= batch_size:
+                states, actions, rewards, next_states, dones = buffer.sample(batch_size)  # Sample a batch from the replay buffer.
+                loss = train_step(states, actions, rewards, next_states, dones, discount)  # Training
+
+        if episode < 950:
+            epsilon -= 0.001  # Decrease epsilon over time to decrease exploration.
+
+        if len(last_100_ep_rewards) == 100:
+            last_100_ep_rewards = last_100_ep_rewards[1:]  # Remove the oldest episode reward from the list.
+        last_100_ep_rewards.append(ep_reward)  # Add the current episode reward to the list.
+
+        if episode % 50 == 0:
+            print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. '
+                  f'Reward in last 100 episodes: {np.mean(last_100_ep_rewards):.3f}')  # Printing information about episode.
+
+        main_nn.save("main_nn")  # Save the main neural network model
+        target_nn.save("target_nn")  # Save the target neural network model
+
+
+train_model()  # Model training
+# main_nn = load_model("main_nn_model.h5")  # Load the target neural network model - uncomment if loading needed
+
+
 
