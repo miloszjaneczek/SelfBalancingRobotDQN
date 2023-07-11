@@ -225,7 +225,6 @@ def train_model():
 
 
 train_model()  # Model training
-# main_nn = load_model("main_nn_model.h5")  # Load the target neural network model - uncomment if loading needed
 
 
 
