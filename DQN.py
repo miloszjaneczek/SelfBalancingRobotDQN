@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+#
+# Based on
+# Source:   https://markelsanz14.medium.com/introduction-to-reinforcement-learning-part-3-q-learning-with-neural-networks-algorithm-dqn-1e22ee928ecd
+# Author:           Markel Sanz Ausin
+# License:          https://creativecommons.org/licenses/by/4.0/
+
+
 import math
 import serial
 import tensorflow as tf
@@ -11,6 +19,7 @@ In our case, there are 3 features: speed, angle, and gyro.
 num_actions -  number of possible actions that the agent can take in the environment (the robot). 
 In our case, there are 516 possible actions.
 '''
+
 num_features = 3
 num_actions = 516
 
@@ -30,12 +39,15 @@ class DQN(tf.keras.Model):
         x = self.dense1(x)
         x = self.dense2(x)
         return self.dense3(x)
-    
+
+    ### our code ###
     def save(self, filename):
         self.save_weights(filename)
     
     def load(self, filename):
         self.load_weights(filename)
+
+    ######
 
 '''
 Creation of instances of DQN network - main neural network and target neural network
@@ -115,6 +127,7 @@ def train_step(states, actions, rewards, next_states, dones, discount):
     optimizer.apply_gradients(zip(grads, main_nn.trainable_variables))  # Update main network weights.
     return loss
 
+### our code ###
 
 def rad(angle):
     """Convert angles from degrees to radians"""
@@ -130,8 +143,12 @@ def load_model(path):
     """Load the model from a file."""
     return tf.keras.models.load_model(path)
 
+######
+
 
 def train_model():
+    ### our code ###
+
     # connectivity setup
     uart_port = 'COM12'  # in case of UART connectivity
     uart_speed = 115200  # serial port speed
@@ -147,6 +164,7 @@ def train_model():
         bytesize=serial.EIGHTBITS,
         timeout=0.01
     )
+    ######
 
     # Learning hyperparameters.
     num_episodes = 1000  # Number of episodes for training.
@@ -159,6 +177,8 @@ def train_model():
     last_100_ep_rewards = []  # List to store the rewards of the last 100 episodes.
 
     for episode in range(num_episodes + 1):
+        ### our code ###
+
         print("NEW EPISODE")
         # data from robot
         if episode == 1:
@@ -173,10 +193,14 @@ def train_model():
 
         state = [speed, angle, gyro]  # Create a state list
 
+        ######
+
         ep_reward, done = 0, False  # Episode reward and done flag
         while not done:
             state_in = tf.expand_dims(state, axis=0)  # Expand dimensions of the state for NN.
             action = select_epsilon_greedy_action(state_in, epsilon)  # Select an action using epsilon-greedy policy.
+
+            ### our code ###
 
             # send data to robot
             ser.write((str(action) + '\n').encode())  # Send action to robot.
@@ -194,6 +218,8 @@ def train_model():
             next_state = [speed, angle, gyro]  # Next state list
             # time based
             reward = 1
+
+            ######
 
             ep_reward += reward  # Add the reward for the episode.
             # Save to experience replay.
@@ -220,11 +246,11 @@ def train_model():
             print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. '
                   f'Reward in last 100 episodes: {np.mean(last_100_ep_rewards):.3f}')  # Printing information about episode.
 
+        ### our code ###
+
         main_nn.save("main_nn")  # Save the main neural network model
         target_nn.save("target_nn")  # Save the target neural network model
 
+        ######
 
 train_model()  # Model training
-
-
-
